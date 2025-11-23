@@ -1,0 +1,8 @@
+version = 0.1
+
+[default.deploy]
+stack_name = "academyos-web"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
