@@ -10,11 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
-      CERTIFICATE_ARN: ${{ secrets.CERTIFICATE_ARN }}
-      HOSTED_ZONE_ID: ${{ secrets.HOSTED_ZONE_ID }}
-      CREATE_WWW_RECORD: ${{ secrets.CREATE_WWW_RECORD || 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,12 +28,4 @@ jobs:
         run: sam build
 
       - name: Deploy
-        run: |
-          if [[ -z "${CERTIFICATE_ARN}" || -z "${HOSTED_ZONE_ID}" ]]; then
-            echo "CERTIFICATE_ARN and HOSTED_ZONE_ID secrets are required." >&2
-            exit 1
-          fi
-          sam deploy \
-            --parameter-overrides "DomainName=${DOMAIN_NAME:-academyos.app} CertificateArn=${CERTIFICATE_ARN} HostedZoneId=${HOSTED_ZONE_ID} CreateWwwRecord=${CREATE_WWW_RECORD:-true}" \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset
+        run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
