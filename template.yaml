@@ -2,6 +2,25 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Serve academyos.app via Lambda proxying the Webflow products page.
 
+Parameters:
+  DomainName:
+    Type: String
+    Default: academyos.app
+    Description: Apex domain to attach to the HTTP API (create www CNAME via parameter below).
+  CertificateArn:
+    Type: String
+    Description: ACM certificate ARN that covers the DomainName (and optionally www.<DomainName>).
+  HostedZoneId:
+    Type: String
+    Description: Route 53 hosted zone ID where Alias/CNAME records should be created.
+  CreateWwwRecord:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Whether to create a www.<DomainName> CNAME pointing to the apex.
+
 Globals:
   Function:
     Runtime: nodejs20.x
@@ -40,7 +59,50 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
+  ApiCustomDomain:
+    Type: AWS::ApiGatewayV2::DomainName
+    Properties:
+      DomainName: !Ref DomainName
+      DomainNameConfigurations:
+        - CertificateArn: !Ref CertificateArn
+          EndpointType: REGIONAL
+          SecurityPolicy: TLS_1_2
+
+  ApiDomainMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Properties:
+      ApiId: !Ref PublicHttpApi
+      DomainName: !Ref ApiCustomDomain
+      Stage: $default
+
+  RootAliasRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApiCustomDomain.RegionalDomainName
+        HostedZoneId: !GetAtt ApiCustomDomain.RegionalHostedZoneId
+
+  WwwCnameRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateWwwCname
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "www.${DomainName}"
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Ref DomainName
+
+Conditions:
+  CreateWwwCname: !Equals [!Ref CreateWwwRecord, 'true']
+
 Outputs:
   ApiBaseUrl:
     Description: Base URL for the HTTP API
     Value: !Sub "https://${PublicHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  CustomDomainUrl:
+    Description: HTTPS URL for the attached custom domain
+    Value: !Sub "https://${DomainName}"

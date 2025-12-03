@@ -4,7 +4,7 @@ Small AWS Lambda + API Gateway that proxies the Webflow page at https://creative
 
 ## How it works
 - `src/handler.mjs` fetches the Webflow page and returns the HTML with simple caching.
-- `template.yaml` defines a Node.js 20 Lambda behind an HTTP API (`$default` stage).
+- `template.yaml` defines a Node.js 20 Lambda behind an HTTP API (`$default` stage) and now also provisions the custom domain, API mapping, and Route53 records.
 - GitHub Actions builds/deploys the SAM stack on every push to `main`.
 
 ## Prerequisites
@@ -13,10 +13,14 @@ Small AWS Lambda + API Gateway that proxies the Webflow page at https://creative
   - `AWS_ACCESS_KEY_ID`
   - `AWS_SECRET_ACCESS_KEY`
   - `AWS_REGION` (defaults to `us-east-1` in `samconfig.toml`, change if desired)
+  - `CERTIFICATE_ARN` (ACM cert covering the domain)
+  - `HOSTED_ZONE_ID` (Route53 hosted zone for the domain)
+  - `DOMAIN_NAME` (optional, defaults to `academyos.app`)
+  - `CREATE_WWW_RECORD` (optional, `true`/`false`; defaults to `true`)
 
 ## CI/CD
 - Workflow: `.github/workflows/deploy.yml`
-- On push to `main`: installs SAM CLI, runs `sam build`, and `sam deploy --resolve-s3`.
+- On push to `main`: installs SAM CLI, runs `sam build`, and `sam deploy --resolve-s3` with the domain parameters pulled from secrets.
 - Stack name: `academyos-web` (see `samconfig.toml`).
 
 ## Local deploy (first-time optional)
@@ -26,17 +30,16 @@ sam deploy --guided   # or rely on samconfig.toml defaults
 ```
 Copy the `ApiBaseUrl` output for testing before wiring the domain.
 
-## Connecting the domain (GoDaddy)
-1. **Request certificate** (ACM, same region as deploy): request public cert for `academyos.app` and `www.academyos.app`; validate via the CNAME records ACM provides (add them in GoDaddy DNS).
-2. **Create API Gateway custom domain** (HTTP API → Custom domain names):
-   - Domain: `www.academyos.app` (simpler with GoDaddy since CNAME is supported).
-   - TLS cert: the ACM cert above.
-   - Endpoint type: Regional.
-3. **API mapping**: map the custom domain to your HTTP API and `$default` stage.
-4. **DNS in GoDaddy**:
-   - Add `CNAME` record: `www` → the API Gateway target domain shown after creating the custom domain (looks like `d-xxxx.execute-api.<region>.amazonaws.com`).
-   - For the apex (`academyos.app`), GoDaddy doesn’t support ALIAS; either forward apex to `https://www.academyos.app` in GoDaddy, or move DNS to Route53 and use an ALIAS A-record to the API Gateway domain.
-5. Wait for DNS + certificate propagation, then browse `https://www.academyos.app`.
+## Connecting the domain (Route53)
+1. **Request certificate** (ACM, same region as deploy): request a public cert for `academyos.app` and `www.academyos.app`; validate using the CNAME records ACM provides. Save the cert ARN for deployment.
+2. **Set DNS to Route53**: point the domain’s nameservers to the Route53 hosted zone you created for `academyos.app`.
+3. **Deploy with domain params**:
+   - `DomainName`: apex domain (defaults to `academyos.app`).
+   - `CertificateArn`: ACM cert ARN from step 1.
+   - `HostedZoneId`: hosted zone ID for the domain.
+   - `CreateWwwRecord`: `true` (default) to add `www` → apex CNAME, `false` to skip.
+4. After deploy, CloudFormation creates the API Gateway custom domain, maps it to the `$default` stage, and creates an Alias A-record to the API. The optional `www` CNAME is also created.
+5. Wait for DNS + certificate propagation, then browse `https://academyos.app` (and `https://www.academyos.app` if enabled).
 
 ## Costs
 Lambda + HTTP API are within the free tier for low traffic but still bill per request; ACM certificates are free.
